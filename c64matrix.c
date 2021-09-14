@@ -136,7 +136,9 @@ void handle_choice(unsigned char choice) {
         case '4':
             if (MAX_LENGTH > 1) MAX_LENGTH--;
             if (is_running) {
-                gotoxy(0, 0);
+                clrscr();
+                init_all_columns();
+                gotoxy(0, 24);
                 printf("max length: %2d", MAX_LENGTH);
             }
             break;
@@ -144,7 +146,9 @@ void handle_choice(unsigned char choice) {
         case '5':
             if (MAX_LENGTH < 20) MAX_LENGTH++;
             if (is_running) {
-                gotoxy(0, 0);
+                clrscr();
+                init_all_columns();
+                gotoxy(0, 24);
                 printf("max length: %2d", MAX_LENGTH);
             }
             break;
