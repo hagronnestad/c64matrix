@@ -3,6 +3,8 @@
 #include <conio.h>
 #include <unistd.h>
 
+#define MEMORY_SETUP_REGISTER 0xD018
+
 unsigned char BACK_COLOR = COLOR_BLACK;
 unsigned char TEXT_COLOR = COLOR_GREEN;
 
@@ -18,21 +20,18 @@ typedef struct column {
 
 column columns[40];
 
+unsigned char column_index = 0;
+signed char tail_pos = 0;
+
 void init_column(unsigned char column) {
     columns[column].start = -(rand() % 20);
     columns[column].y = columns[column].start;
     columns[column].length = 2 + (rand() % 20);
 }
 
-void step(void) {
-    char column = 0;
-
-    for (column = 0; column <= COLUMN_MAX; column++) {
-
-        signed char tail_pos = 0;
-
-        // column is visible, draw char
-        if (columns[column].y >= 0 && columns[column].y <= ROW_MAX) {
+void update_column(unsigned char column) {
+    // column is visible, draw char
+    if (columns[column].y >= 0 && columns[column].y <= ROW_MAX) {
 
             // Change color of previos char
             // TODO: Set color at char pos only instead of doing
@@ -58,16 +57,18 @@ void step(void) {
         columns[column].y++;
 
         // restart column when tail exits screen
-        if (columns[column].y - columns[column].length > ROW_MAX) {
-            init_column(column);
-        }
-
+    if (columns[column].y - columns[column].length > ROW_MAX) {
+        init_column(column);
     }
 }
 
-int main(void) {
-    int column = 0;
+void update(void) {
+    for (column_index = 0; column_index <= COLUMN_MAX; column_index++) {
+        update_column(column_index);
+}
+}
 
+int main(void) {
     // randomize rand() function
     _randomize(); 
 
@@ -76,13 +77,16 @@ int main(void) {
     bgcolor(BACK_COLOR);
     bordercolor(BACK_COLOR);
 
+    // set character set to upper case
+    *(char*)MEMORY_SETUP_REGISTER = 0x15;
+
     // init all column structs
-    for (column = 0; column <= COLUMN_MAX; column++) {
-        init_column(column);
+    for (column_index = 0; column_index <= COLUMN_MAX; column_index++) {
+        init_column(column_index);
     }
 
     while (1) {
-        step();
+        update();
     }
 
     return 0;
