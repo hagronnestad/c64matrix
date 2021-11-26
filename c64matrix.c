@@ -1,10 +1,17 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <conio.h>
 #include <unistd.h>
 #include <6502.h>
 
+#include "characters.h"
+
 #define MEMORY_SETUP_REGISTER 0xD018
+#define MEMORY_SETUP_REGISTER_CHAR_SET_UPPER 0x15 // $D018 = %xxxx010x -> charmem is at $1000
+#define MEMORY_SETUP_REGISTER_CHAR_SET_LOWER 0x17 // $D018 = %xxxx011x -> charmem is at $1800
+#define MEMORY_SETUP_REGISTER_CHAR_SET_3800  0x1F // $D018 = %xxxx111x -> charmem is at $3800
+
 #define SOFT_RESET_VECTOR 0xFCE2
 
 unsigned char DEFAULT_BACK_COLOR = COLOR_BLACK;
@@ -32,6 +39,8 @@ unsigned char column_index = 0;
 signed char tail_pos = 0;
 
 unsigned char rainbow_mode = 0;
+unsigned char matrix_mode = 0;
+unsigned char numbers_symbols_only = 0;
 unsigned char is_running = 0;
 
 struct regs *registers;
@@ -55,7 +64,7 @@ void update_column(unsigned char column) {
     // column is visible, draw char
     if (columns[column].y >= 0 && columns[column].y <= ROW_MAX) {
 
-        // Change color of previos char
+        // Change color of previous char
         // TODO: Set color at char pos only instead of doing
         // textcolor and drawing the char twice
         if (columns[column].y > 0) {
@@ -63,9 +72,19 @@ void update_column(unsigned char column) {
             cputcxy(column, columns[column].y - 1, columns[column].chr);
         }
 
-        columns[column].chr = rand() % 0xFF;
+        // columns[column].chr = 0x30 + rand() % 0x2A;
+        // columns[column].chr = rand() % 0xFF;
+        // columns[column].chr = '!' + (rand() % ('z' - '!'));
+        // columns[column].chr = 0xA1 + rand() % (0xFF - 0xA1);
 
-        textcolor(columns[column].y < ROW_MAX ? COLOR_WHITE : (rainbow_mode ? rand() % 15 : TEXT_COLOR));
+        if (numbers_symbols_only) {
+            columns[column].chr = (unsigned char)27 + (unsigned char)(rand() % 64);
+        } else {
+            columns[column].chr = rand() % 0xFF;
+        }
+
+        textcolor(columns[column].y < ROW_MAX ?
+            COLOR_WHITE : (rainbow_mode ? rand() % 15 : TEXT_COLOR));
         cputcxy(column, columns[column].y, columns[column].chr);
     }
 
@@ -158,6 +177,26 @@ void handle_choice(unsigned char choice) {
             _sys(registers);
             // asm("jsr $FCE2");
 
+        case 'n':
+            numbers_symbols_only = numbers_symbols_only == 0 ? 1 : 0;
+            if (is_running) {
+                *(char*)MEMORY_SETUP_REGISTER = numbers_symbols_only == 1 ?
+                    MEMORY_SETUP_REGISTER_CHAR_SET_UPPER : MEMORY_SETUP_REGISTER_CHAR_SET_LOWER;
+                // clrscr();
+                // init_all_columns();
+            }
+            break;
+
+        case 'm':
+            matrix_mode = matrix_mode == 0 ? 1 : 0;
+            if (is_running) {
+                *(char*)MEMORY_SETUP_REGISTER = matrix_mode == 1 ?
+                    MEMORY_SETUP_REGISTER_CHAR_SET_3800 : MEMORY_SETUP_REGISTER_CHAR_SET_LOWER;
+                clrscr();
+                init_all_columns();
+            }
+            break;
+
         case 13: // RETURN
             if (!is_running) {
                 start_matrix();
@@ -173,7 +212,10 @@ void start_matrix(void) {
     clrscr();
 
     // set character set to upper case
-    *(char*)MEMORY_SETUP_REGISTER = 0x15;
+    // *(char*)MEMORY_SETUP_REGISTER = MEMORY_SETUP_REGISTER_CHAR_SET_UPPER;
+    *(char*)MEMORY_SETUP_REGISTER = matrix_mode == 1 ?
+        MEMORY_SETUP_REGISTER_CHAR_SET_3800 : numbers_symbols_only == 1 ?
+        MEMORY_SETUP_REGISTER_CHAR_SET_UPPER : MEMORY_SETUP_REGISTER_CHAR_SET_LOWER;
 
     // init all column structs
     init_all_columns();
@@ -199,7 +241,7 @@ void show_menu() {
     bordercolor(BACK_COLOR);
 
     // set character set to lower case
-    *(char*)MEMORY_SETUP_REGISTER = 0x17;
+    *(char*)MEMORY_SETUP_REGISTER = MEMORY_SETUP_REGISTER_CHAR_SET_LOWER;
 
     cputsxy(0, 0, "c64matrix - cmatrix for the Commodore 64");
     cputsxy(0, 2, "SETTINGS");
@@ -213,11 +255,13 @@ void show_menu() {
     printf("     (%d)", MAX_LENGTH);
     cputsxy(8, 10, "5: Decrease length");
     printf("     (%d)", MAX_LENGTH);
+    cputsxy(8, 11, "M: Matrix mode");
+    printf("         (%s)", matrix_mode ? "ON" : "OFF");
 
-    cputsxy(3, 13, "Return: START");
-    cputsxy(6, 15, "Any: MENU");
+    cputsxy(3, 14, "Return: START");
+    cputsxy(6, 16, "Any: MENU");
 
-    cputsxy(8, 17, "R: Soft Reset");
+    cputsxy(8, 18, "R: Soft Reset");
 
     chlinexy(0, 23, 40);
     cputsxy(0, 24, "C0d3d by HAG - http://hag.yt");
@@ -228,7 +272,13 @@ void show_menu() {
     show_menu();
 }
 
+void copy_matrix_code_chars() {
+    memcpy((const void *) 0x3800, MATRIX_CODE_CHARS_2, 4096);
+}
+
 int main(void) {
+    copy_matrix_code_chars();
+
     // randomize rand() function
     _randomize(); 
 
