@@ -1,8 +1,10 @@
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 #include <conio.h>
 #include <unistd.h>
 #include <6502.h>
+#include <cbm.h>
 
 #define MEMORY_SETUP_REGISTER 0xD018
 #define SOFT_RESET_VECTOR 0xFCE2
@@ -14,7 +16,7 @@ unsigned char BACK_COLOR = COLOR_BLACK;
 unsigned char TEXT_COLOR = COLOR_GREEN;
 
 unsigned char MAX_START = 20;
-unsigned char MAX_LENGTH = 20;
+unsigned char MAX_LENGTH = 15;
 
 const unsigned char COLUMN_MAX = 39;
 const signed char ROW_MAX = 24;
@@ -32,12 +34,14 @@ unsigned char column_index = 0;
 signed char tail_pos = 0;
 
 unsigned char rainbow_mode = 0;
+unsigned char reverse_mode = 0;
+unsigned char shifted_mode = 0;
+unsigned char symbols_only_mode = 0;
 unsigned char is_running = 0;
 
 struct regs *registers;
 
 void start_matrix(void);
-
 
 void init_column(unsigned char column) {
     columns[column].start = -(rand() % MAX_START);
@@ -52,7 +56,7 @@ void init_all_columns() {
 }
 
 void update_column(unsigned char column) {
-    // column is visible, draw char
+    // Check if column is visible on screen
     if (columns[column].y >= 0 && columns[column].y <= ROW_MAX) {
 
         // Change color of previos char
@@ -63,7 +67,11 @@ void update_column(unsigned char column) {
             cputcxy(column, columns[column].y - 1, columns[column].chr);
         }
 
-        columns[column].chr = rand() % 0xFF;
+        if (symbols_only_mode) { // shifted_mode must be off
+            columns[column].chr = 0x5B + (rand() % (0xBF-0x5B));
+        } else {
+            columns[column].chr = 0x21 + (rand() % (0xBF-0x21));
+        }
 
         textcolor(columns[column].y < ROW_MAX ? COLOR_WHITE : (rainbow_mode ? rand() % 15 : TEXT_COLOR));
         cputcxy(column, columns[column].y, columns[column].chr);
@@ -72,6 +80,7 @@ void update_column(unsigned char column) {
     // clear tail
     tail_pos = columns[column].y - columns[column].length;
     if (tail_pos >= 0 && tail_pos <= ROW_MAX) {
+        if (reverse_mode) textcolor(BACK_COLOR);
         cputcxy(column, tail_pos, ' ');
     }
 
@@ -101,6 +110,8 @@ void randomize_colors() {
 }
 
 void handle_choice(unsigned char choice) {
+    textcolor(TEXT_COLOR);
+
     switch (choice) {
         case '1':
             randomize_colors();
@@ -110,6 +121,8 @@ void handle_choice(unsigned char choice) {
             if (is_running) {
                 clrscr();
                 init_all_columns();
+                gotoxy(0, 24);
+                printf("colors randomized");
             }
             break;
 
@@ -119,9 +132,12 @@ void handle_choice(unsigned char choice) {
             textcolor(TEXT_COLOR);
             bgcolor(BACK_COLOR);
             bordercolor(BACK_COLOR);
+            rainbow_mode = 0;
             if (is_running) {
                 clrscr();
                 init_all_columns();
+                gotoxy(0, 24);
+                printf("default colors");
             }
             break;
 
@@ -130,50 +146,116 @@ void handle_choice(unsigned char choice) {
             if (is_running) {
                 clrscr();
                 init_all_columns();
+                gotoxy(0, 24);
+                printf("rainbow mode: %s", rainbow_mode == 0 ? "off" : "on");
             }
             break;
 
-        case '4':
+        case 'R':
+        case 'r':
+            reverse_mode = reverse_mode == 0 ? 1 : 0;
+            if (is_running) {
+                revers(reverse_mode);
+                clrscr();
+                init_all_columns();
+                gotoxy(0, 24);
+                printf("reverse mode: %s", reverse_mode == 0 ? "off" : "on");
+            }
+            break;
+
+        case 'S':
+        case 's':
+            shifted_mode = shifted_mode == 0 ? 1 : 0;
+            if (shifted_mode) symbols_only_mode = 0;
+            if (is_running) {
+                *(char*)MEMORY_SETUP_REGISTER = shifted_mode == 0 ? 0x15 : 0x17;
+                clrscr();
+                init_all_columns();
+                gotoxy(0, 24);
+                printf("shifted mode: %s", shifted_mode == 0 ? "off" : "on");
+            }
+            break;
+
+        case 'P':
+        case 'p':
+            symbols_only_mode = symbols_only_mode == 0 ? 1 : 0;
+            if (symbols_only_mode) shifted_mode = 0;
+            if (is_running) {
+                *(char*)MEMORY_SETUP_REGISTER = shifted_mode == 0 ? 0x15 : 0x17;
+                clrscr();
+                init_all_columns();
+                gotoxy(0, 24);
+                printf("symbols only mode: %s", symbols_only_mode == 0 ? "off" : "on");
+            }
+            break;
+
+        case '-':
             if (MAX_LENGTH > 1) MAX_LENGTH--;
             if (is_running) {
                 clrscr();
                 init_all_columns();
                 gotoxy(0, 24);
-                printf("max length: %2d", MAX_LENGTH);
+                printf("max tail length: %2d", MAX_LENGTH);
             }
             break;
 
-        case '5':
+        case '+':
             if (MAX_LENGTH < 20) MAX_LENGTH++;
             if (is_running) {
                 clrscr();
                 init_all_columns();
                 gotoxy(0, 24);
-                printf("max length: %2d", MAX_LENGTH);
+                printf("max tail length: %2d", MAX_LENGTH);
             }
             break;
 
-        case 'r':
+        case 'X':
+        case 'x':
             registers->pc = SOFT_RESET_VECTOR;
             _sys(registers);
             // asm("jsr $FCE2");
 
         case 13: // RETURN
-            if (!is_running) {
+            if (is_running) {
+                clrscr();
+                is_running = 0;
+            } else {
+                clrscr();
                 start_matrix();
             }
+            break;
 
         default:
+            if (is_running) clrscr();
             is_running = 0;
             break;
     }
 }
 
 void start_matrix(void) {
-    clrscr();
+    revers(reverse_mode);
 
-    // set character set to upper case
-    *(char*)MEMORY_SETUP_REGISTER = 0x15;
+    // set character set
+    // if (shifted_mode) {
+    //     *(char*)MEMORY_SETUP_REGISTER = 0x17; // Upper and lower, less graphics
+    // } else {
+    //     *(char*)MEMORY_SETUP_REGISTER = 0x15;
+    // }
+    *(char*)MEMORY_SETUP_REGISTER = shifted_mode == 0 ? 0x15 : 0x17;
+
+    // // Print all chars for debugging
+    // gotoxy(0, 0);
+    // // All printable chars
+    // for (column_index = 0x00; column_index <= 0xFE; column_index++) {
+    //     cputc(column_index);
+    // }
+    // cputc(0x0D);
+    // cputc(0x0D);
+    // // Only graphical chars (must be unshifted)
+    // for (column_index = 0x5E; column_index <= 0xBF; column_index++) {
+    //     cputc(column_index);
+    // }
+    // cgetc();
 
     // init all column structs
     init_all_columns();
@@ -192,8 +274,7 @@ void start_matrix(void) {
 void show_menu() {   
     unsigned char option = 0;
 
-    // clear screen and set colors
-    clrscr();
+    // set colors
     textcolor(TEXT_COLOR);
     bgcolor(BACK_COLOR);
     bordercolor(BACK_COLOR);
@@ -201,27 +282,47 @@ void show_menu() {
     // set character set to lower case
     *(char*)MEMORY_SETUP_REGISTER = 0x17;
 
+    // draw menu
+    revers(1);
     cputsxy(0, 0, "c64matrix - cmatrix for the Commodore 64");
+    revers(0);
+    printf("\x92");
     cputsxy(0, 2, "SETTINGS");
     chlinexy(0, 3, 40);
 
     cputsxy(8, 6, "1: Randomize colors");
     cputsxy(8, 7, "2: Default colors");
+    
     cputsxy(8, 8, "3: Rainbow mode");
-    printf("        (%s)", rainbow_mode ? "ON" : "OFF");
-    cputsxy(8, 9, "4: Increase length");
-    printf("     (%d)", MAX_LENGTH);
-    cputsxy(8, 10, "5: Decrease length");
-    printf("     (%d)", MAX_LENGTH);
+    gotoxy(32, 8);
+    printf("(%s) ", rainbow_mode ? "ON" : "OFF");
 
-    cputsxy(3, 13, "Return: START");
-    cputsxy(6, 15, "Any: MENU");
+    cputsxy(8, 9, "R: Reverse mode");
+    gotoxy(32, 9);
+    printf("(%s) ", reverse_mode ? "ON" : "OFF");
 
-    cputsxy(8, 17, "R: Soft Reset");
+    cputsxy(8, 10, "S: Shifted mode");
+    gotoxy(32, 10);
+    printf("(%s) ", shifted_mode ? "ON" : "OFF");
 
-    chlinexy(0, 23, 40);
-    cputsxy(0, 24, "C0d3d by HAG - http://hag.yt");
+    cputsxy(8, 11, "P: Symbols Only mode");
+    gotoxy(32, 11);
+    printf("(%s) ", symbols_only_mode ? "ON" : "OFF");
+    
+    cputsxy(6, 12, "+/-: Tail length");
+    gotoxy(32, 12);
+    printf("(%d) ", MAX_LENGTH);
 
+    cputsxy(3, 16, "Return: Enter The Matrix");
+    cputsxy(6, 18, "Any: This Menu");
+
+    cputsxy(8, 21, "X: Soft Reset");
+
+    revers(1);
+    cputsxy(0, 24, "C0d3d by HAG'S LAB - http://hag.yt      ");
+    revers(0);
+
+    // get menu option and handle it
     option = cgetc();
     handle_choice(option);
 
@@ -229,6 +330,13 @@ void show_menu() {
 }
 
 int main(void) {
+
+    // asm("jsr $fda3");
+    // asm("jsr $fd50");
+    // asm("jsr $fd15");
+    // asm("jsr $ff5b");
+
+
     // randomize rand() function
     _randomize(); 
 
@@ -238,8 +346,12 @@ int main(void) {
     bgcolor(BACK_COLOR);
     bordercolor(BACK_COLOR);
 
+    // gotoxy(0, 24);
+    // printf("press return for menu");
+
 loop:
     start_matrix();
+    clrscr();
     show_menu();
     goto loop;
 
