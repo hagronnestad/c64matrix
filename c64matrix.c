@@ -16,7 +16,7 @@ unsigned char BACK_COLOR = COLOR_BLACK;
 unsigned char TEXT_COLOR = COLOR_GREEN;
 
 unsigned char MAX_START = 20;
-unsigned char MAX_LENGTH = 15;
+unsigned char MAX_LENGTH = 12;
 
 const unsigned char COLUMN_MAX = 39;
 const signed char ROW_MAX = 24;
