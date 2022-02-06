@@ -10,10 +10,13 @@
 #define SOFT_RESET_VECTOR 0xFCE2
 
 unsigned char DEFAULT_BACK_COLOR = COLOR_BLACK;
-unsigned char DEFAULT_TEXT_COLOR = COLOR_GREEN;
+unsigned char DEFAULT_TEXT_COLOR = COLOR_LIGHTGREEN;
 
 unsigned char BACK_COLOR = COLOR_BLACK;
-unsigned char TEXT_COLOR = COLOR_GREEN;
+unsigned char TEXT_COLOR = COLOR_LIGHTGREEN;
+
+unsigned char TEXT_COLORS_MAX = 15;
+unsigned char text_colors[16];
 
 unsigned char MAX_START = 20;
 unsigned char MAX_LENGTH = 12;
@@ -33,13 +36,46 @@ column columns[40];
 unsigned char column_index = 0;
 signed char tail_pos = 0;
 
-unsigned char rainbow_mode = 0;
 unsigned char reverse_mode = 0;
 unsigned char shifted_mode = 0;
 unsigned char symbols_only_mode = 0;
 unsigned char is_running = 0;
 
 struct regs *registers;
+
+
+void set_text_colors_all() {
+    text_colors[0] = COLOR_BLACK;
+    text_colors[1] = COLOR_WHITE;
+    text_colors[2] = COLOR_RED;
+    text_colors[3] = COLOR_CYAN;
+    text_colors[4] = COLOR_VIOLET;
+    text_colors[5] = COLOR_GREEN;
+    text_colors[6] = COLOR_BLUE;
+    text_colors[7] = COLOR_YELLOW;
+    text_colors[8] = COLOR_ORANGE;
+    text_colors[9] = COLOR_BROWN;
+    text_colors[10] = COLOR_LIGHTRED;
+    text_colors[11] = COLOR_GRAY1;
+    text_colors[12] = COLOR_GRAY2;
+    text_colors[13] = COLOR_LIGHTGREEN;
+    text_colors[14] = COLOR_LIGHTBLUE;
+    text_colors[15] = COLOR_GRAY3;
+    TEXT_COLORS_MAX = 15;
+}
+
+void set_text_colors_green() {
+    text_colors[0] = COLOR_GREEN;
+    text_colors[1] = COLOR_LIGHTGREEN;
+    TEXT_COLORS_MAX = 2;
+}
+
+void set_text_colors_blue() {
+    text_colors[0] = COLOR_BLUE;
+    text_colors[1] = COLOR_LIGHTBLUE;
+    TEXT_COLORS_MAX = 2;
+}
+
 
 void start_matrix(void);
 
@@ -55,41 +91,43 @@ void init_all_columns() {
     }
 }
 
-void update_column(unsigned char column) {
+void update_column(unsigned char col) {
+    signed char y = columns[col].y;
+
     // Check if column is visible on screen
-    if (columns[column].y >= 0 && columns[column].y <= ROW_MAX) {
+    if (y >= 0 && y <= ROW_MAX) {
 
         // Change color of previos char
         // TODO: Set color at char pos only instead of doing
         // textcolor and drawing the char twice
-        if (columns[column].y > 0) {
-            textcolor(rainbow_mode ? rand() % 15 : TEXT_COLOR);
-            cputcxy(column, columns[column].y - 1, columns[column].chr);
+        if (y > 0) {
+            textcolor(text_colors[rand() % TEXT_COLORS_MAX]);
+            cputcxy(col, y - 1, columns[col].chr);
         }
 
         if (symbols_only_mode) { // shifted_mode must be off
-            columns[column].chr = 0x5B + (rand() % (0xBF-0x5B));
+            columns[col].chr = 0x5B + (rand() % (0xBF-0x5B));
         } else {
-            columns[column].chr = 0x21 + (rand() % (0xBF-0x21));
+            columns[col].chr = 0x21 + (rand() % (0xBF-0x21));
         }
 
-        textcolor(columns[column].y < ROW_MAX ? COLOR_WHITE : (rainbow_mode ? rand() % 15 : TEXT_COLOR));
-        cputcxy(column, columns[column].y, columns[column].chr);
+        textcolor((y < ROW_MAX) ? COLOR_WHITE : text_colors[rand() % TEXT_COLORS_MAX]);
+        cputcxy(col, y, columns[col].chr);
     }
 
     // clear tail
-    tail_pos = columns[column].y - columns[column].length;
+    tail_pos = y - columns[col].length;
     if (tail_pos >= 0 && tail_pos <= ROW_MAX) {
         if (reverse_mode) textcolor(BACK_COLOR);
-        cputcxy(column, tail_pos, ' ');
+        cputcxy(col, tail_pos, ' ');
     }
 
     // inc y pos
-    columns[column].y++;
+    columns[col].y++;
 
     // restart column when tail exits screen
-    if (columns[column].y - columns[column].length > ROW_MAX) {
-        init_column(column);
+    if (y - columns[col].length > ROW_MAX) {
+        init_column(col);
     }
 }
 
@@ -99,55 +137,83 @@ void update(void) {
     }
 }
 
-void randomize_colors() {
-    do {
-        BACK_COLOR = rand() % 16;
-    } while (BACK_COLOR == COLOR_WHITE);
-    
-    do {
-        TEXT_COLOR = rand() % 16;
-    } while (TEXT_COLOR == BACK_COLOR || TEXT_COLOR == COLOR_WHITE);
-}
-
 void handle_choice(unsigned char choice) {
     textcolor(TEXT_COLOR);
 
     switch (choice) {
         case '1':
-            randomize_colors();
-            textcolor(TEXT_COLOR);
+            do {
+                BACK_COLOR++;
+                if (BACK_COLOR == 15) BACK_COLOR = 0;
+            } while (BACK_COLOR == TEXT_COLOR || BACK_COLOR == COLOR_WHITE);
+
             bgcolor(BACK_COLOR);
             bordercolor(BACK_COLOR);
             if (is_running) {
                 clrscr();
                 init_all_columns();
                 gotoxy(0, 24);
-                printf("colors randomized");
             }
             break;
 
         case '2':
+            do {
+                TEXT_COLOR++;
+                if (TEXT_COLOR == 15) TEXT_COLOR = 0;
+            } while (TEXT_COLOR == BACK_COLOR || TEXT_COLOR == COLOR_WHITE);
+
+            text_colors[0] = TEXT_COLOR;
+            TEXT_COLORS_MAX = 1;
+            textcolor(TEXT_COLOR);
+            if (is_running) {
+                clrscr();
+                init_all_columns();
+                gotoxy(0, 24);
+            }
+            break;
+
+        case '3':
             TEXT_COLOR = DEFAULT_TEXT_COLOR;
             BACK_COLOR = DEFAULT_BACK_COLOR;
             textcolor(TEXT_COLOR);
             bgcolor(BACK_COLOR);
             bordercolor(BACK_COLOR);
-            rainbow_mode = 0;
+            set_text_colors_green();
             if (is_running) {
                 clrscr();
                 init_all_columns();
                 gotoxy(0, 24);
-                printf("default colors");
+                printf("green theme");
             }
             break;
 
-        case '3':
-            rainbow_mode = rainbow_mode == 0 ? 1 : 0;
+        case '4':
+            TEXT_COLOR = COLOR_LIGHTBLUE;
+            BACK_COLOR = COLOR_BLACK;
+            textcolor(TEXT_COLOR);
+            bgcolor(BACK_COLOR);
+            bordercolor(BACK_COLOR);
+            set_text_colors_blue();
             if (is_running) {
                 clrscr();
                 init_all_columns();
                 gotoxy(0, 24);
-                printf("rainbow mode: %s", rainbow_mode == 0 ? "off" : "on");
+                printf("blue theme");
+            }
+            break;
+
+        case '5':
+            TEXT_COLOR = COLOR_WHITE;
+            BACK_COLOR = COLOR_BLACK;
+            textcolor(TEXT_COLOR);
+            bgcolor(BACK_COLOR);
+            bordercolor(BACK_COLOR);
+            set_text_colors_all();
+            if (is_running) {
+                clrscr();
+                init_all_columns();
+                gotoxy(0, 24);
+                printf("rainbow theme");
             }
             break;
 
@@ -236,11 +302,6 @@ void start_matrix(void) {
     revers(reverse_mode);
 
     // set character set
-    // if (shifted_mode) {
-    //     *(char*)MEMORY_SETUP_REGISTER = 0x17; // Upper and lower, less graphics
-    // } else {
-    //     *(char*)MEMORY_SETUP_REGISTER = 0x15;
-    // }
     *(char*)MEMORY_SETUP_REGISTER = shifted_mode == 0 ? 0x15 : 0x17;
 
     // // Print all chars for debugging
@@ -290,27 +351,26 @@ void show_menu() {
     cputsxy(0, 2, "SETTINGS");
     chlinexy(0, 3, 40);
 
-    cputsxy(8, 6, "1: Randomize colors");
-    cputsxy(8, 7, "2: Default colors");
-    
-    cputsxy(8, 8, "3: Rainbow mode");
-    gotoxy(32, 8);
-    printf("(%s) ", rainbow_mode ? "ON" : "OFF");
+    cputsxy(8, 5, "1: Change Background Color");
+    cputsxy(8, 6, "2: Change Text Color");
+    cputsxy(8, 7, "3: Green Theme");
+    cputsxy(8, 8, "4: Blue Theme");
+    cputsxy(8, 9, "5: Rainbow Theme");
 
-    cputsxy(8, 9, "R: Reverse mode");
-    gotoxy(32, 9);
+    cputsxy(8, 10, "R: Reverse Mode");
+    gotoxy(32, 10);
     printf("(%s) ", reverse_mode ? "ON" : "OFF");
 
-    cputsxy(8, 10, "S: Shifted mode");
-    gotoxy(32, 10);
+    cputsxy(8, 11, "S: Shifted Mode");
+    gotoxy(32, 11);
     printf("(%s) ", shifted_mode ? "ON" : "OFF");
 
-    cputsxy(8, 11, "P: Symbols Only mode");
-    gotoxy(32, 11);
+    cputsxy(8, 12, "P: Symbols Only Mode");
+    gotoxy(32, 12);
     printf("(%s) ", symbols_only_mode ? "ON" : "OFF");
     
-    cputsxy(6, 12, "+/-: Tail length");
-    gotoxy(32, 12);
+    cputsxy(6, 13, "+/-: Max Tail Length");
+    gotoxy(32, 13);
     printf("(%d) ", MAX_LENGTH);
 
     cputsxy(3, 16, "Return: Enter The Matrix");
@@ -330,13 +390,6 @@ void show_menu() {
 }
 
 int main(void) {
-
-    // asm("jsr $fda3");
-    // asm("jsr $fd50");
-    // asm("jsr $fd15");
-    // asm("jsr $ff5b");
-
-
     // randomize rand() function
     _randomize(); 
 
@@ -345,9 +398,10 @@ int main(void) {
     textcolor(TEXT_COLOR);
     bgcolor(BACK_COLOR);
     bordercolor(BACK_COLOR);
+    set_text_colors_green();
 
-    // gotoxy(0, 24);
-    // printf("press return for menu");
+    //gotoxy(0, 24);
+    //printf("press return for menu");
 
 loop:
     start_matrix();
