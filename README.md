@@ -27,7 +27,7 @@
 
 ## Releases
 
-A cartridge image (`.bin`) as well as a `.prg`-file is available in the release section.
+A cartridge image (`.bin`) as well as a `.prg`-file is available in the ***[Releases section](https://github.com/hagronnestad/c64matrix/releases)***.
 
 ### Raw Cartridge Image (`.bin`)
 
